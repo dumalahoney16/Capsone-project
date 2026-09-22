@@ -1,4 +1,4 @@
-# Python virtual environments
+﻿# Python virtual environments
 venv/
 env/
 ENV/
@@ -10,8 +10,7 @@ __pycache__/
 *$py.class
 .pytest_cache/
 
-# Large datasets (Never upload raw datasets to GitHub)
-dataset/
+# Large zip/archive files only
 *.zip
 *.tar.gz
 *.csv
