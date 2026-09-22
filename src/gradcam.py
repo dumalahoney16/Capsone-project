@@ -35,7 +35,6 @@ import os
 import sys
 import numpy as np
 from PIL import Image
-import cv2
 import tensorflow as tf
 from tensorflow import keras
 
@@ -182,35 +181,31 @@ def overlay_gradcam(
     original_img: Image.Image,
     heatmap: np.ndarray,
     alpha: float = 0.45,
-    colormap: int = cv2.COLORMAP_JET
 ) -> Image.Image:
     """
     Superimposes the Grad-CAM heatmap over the original retinal image.
-
-    Args:
-        original_img: PIL Image of the original fundus photograph.
-        heatmap: 2D NumPy array [0, 1] from compute_gradcam_heatmap.
-        alpha: Transparency factor for heatmap overlay (0 = only original, 1 = only heatmap).
-        colormap: OpenCV colormap constant (default: COLORMAP_JET).
-
-    Returns:
-        PIL Image of the blended explainable visualization.
+    Uses PIL only — no OpenCV/libGL dependency.
     """
     orig_w, orig_h = original_img.size
 
-    # 1. Resize heatmap to match the original image dimensions
-    heatmap_resized = cv2.resize(heatmap, (orig_w, orig_h))
+    # 1. Resize heatmap to match original image dimensions
+    heatmap_resized = np.array(
+        Image.fromarray((heatmap * 255).astype(np.uint8)).resize((orig_w, orig_h), Image.BILINEAR),
+        dtype=np.float32
+    ) / 255.0
 
-    # 2. Rescale heatmap to 8-bit unsigned integer (0-255)
-    heatmap_uint8 = np.uint8(255 * heatmap_resized)
+    # 2. Apply JET colormap manually using numpy
+    # JET: blue -> cyan -> green -> yellow -> red
+    r = np.clip(1.5 - np.abs(heatmap_resized * 4.0 - 3.0), 0, 1)
+    g = np.clip(1.5 - np.abs(heatmap_resized * 4.0 - 2.0), 0, 1)
+    b = np.clip(1.5 - np.abs(heatmap_resized * 4.0 - 1.0), 0, 1)
 
-    # 3. Apply color map to transform single-channel intensity into RGB thermal map
-    heatmap_colored = cv2.applyColorMap(heatmap_uint8, colormap)
-    heatmap_colored_rgb = cv2.cvtColor(heatmap_colored, cv2.COLOR_BGR2RGB)
+    heatmap_rgb = np.stack([r, g, b], axis=-1)  # (H, W, 3) float [0,1]
+    heatmap_uint8 = (heatmap_rgb * 255).astype(np.uint8)
 
-    # 4. Blend original image with colored heatmap
-    orig_np = np.array(original_img.convert("RGB"))
-    blended = np.float32(heatmap_colored_rgb) * alpha + np.float32(orig_np) * (1.0 - alpha)
+    # 3. Blend with original image
+    orig_np = np.array(original_img.convert("RGB"), dtype=np.float32)
+    blended = heatmap_uint8 * alpha + orig_np * (1.0 - alpha)
     blended = np.clip(blended, 0, 255).astype(np.uint8)
 
     return Image.fromarray(blended)
